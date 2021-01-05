@@ -53,551 +53,549 @@ Use the same mode of operation for decryption.
  */
 
 using System;
-using System.Text;
 using System.Security.Cryptography;
+using System.Text;
 
-namespace ConteriePlan
+/// <summary>
+/// BlowFish 文本加密
+/// ECB是最简单的块密码加密模式，加密前根据加密块大小（如AES为128位）分成若干块，之后将每块使用相同的密钥单独加密，解密同理。ECB模式由于每块数据的加密是独立的因此加密和解密都可以并行计算，ECB模式最大的缺点是相同的明文块会被加密成相同的密文块，这种方法在某些环境下不能提供严格的数据保密性。
+/// CBC模式对于每个待加密的密码块在加密前会先与前一个密码块的密文异或然后再用加密器加密。第一个明文块与一个叫初始化向量的数据块异或。CBC模式相比ECB有更高的保密性，但由于对每个数据块的加密依赖与前一个数据块的加密所以加密无法并行。与ECB一样在加密前需要对数据进行填充，不是很适合对流数据进行加密。
+/// CTR模式用密钥对输入的计数器加密，然后同明文异或得到密文。解密原理：用密钥对输入计数器加密，然后同密文异或得到明文。无填充，可以高效地作为流式加密使用。
+/// </summary>
+internal class BlowFish
 {
+    #region "Global variables and constants"
+
+    private const int ROUNDS = 16; //standard is 16, to increase the number of rounds, bf_P needs to be equal to the number of rouds. Use digits of PI.
+
+    //Random number generator for creating IVs
+    private RNGCryptoServiceProvider randomSource;
+
+    //SBLOCKS
+    private uint[] bf_s0;
+    private uint[] bf_s1;
+    private uint[] bf_s2;
+    private uint[] bf_s3;
+
+    private uint[] bf_P;
+
+    //KEY
+    private byte[] key;
+
+    //HALF-BLOCKS
+    private uint xl_par;
+    private uint xr_par;
+
+    //Initialization Vector for CBC and CTR mode
+    private byte[] InitVector;
+    private bool IVSet;
+
+    //For compatibility with the javascript crypto library:
+    //  http://etherhack.co.uk/symmetric/blowfish/blowfish.html
+    private bool nonStandardMethod;
+
+    #endregion
+
+    #region "Constructors"
+
     /// <summary>
-    /// BlowFish 文本加密
-    /// ECB是最简单的块密码加密模式，加密前根据加密块大小（如AES为128位）分成若干块，之后将每块使用相同的密钥单独加密，解密同理。ECB模式由于每块数据的加密是独立的因此加密和解密都可以并行计算，ECB模式最大的缺点是相同的明文块会被加密成相同的密文块，这种方法在某些环境下不能提供严格的数据保密性。
-    /// CBC模式对于每个待加密的密码块在加密前会先与前一个密码块的密文异或然后再用加密器加密。第一个明文块与一个叫初始化向量的数据块异或。CBC模式相比ECB有更高的保密性，但由于对每个数据块的加密依赖与前一个数据块的加密所以加密无法并行。与ECB一样在加密前需要对数据进行填充，不是很适合对流数据进行加密。
-    /// CTR模式用密钥对输入的计数器加密，然后同明文异或得到密文。解密原理：用密钥对输入计数器加密，然后同密文异或得到明文。无填充，可以高效地作为流式加密使用。
+    /// Constructor for hex key
     /// </summary>
-    internal class BlowFish
+    /// <param name="hexKey">Cipher key as a hex string</param>
+    public BlowFish(string hexKey)
     {
-        #region "Global variables and constants"
+        randomSource = new RNGCryptoServiceProvider();
+        SetupKey(HexToByte(hexKey));
+    }
 
-        const int ROUNDS = 16; //standard is 16, to increase the number of rounds, bf_P needs to be equal to the number of rouds. Use digits of PI.
+    /// <summary>
+    /// Constructor for byte key
+    /// </summary>
+    /// <param name="cipherKey">Cipher key as a byte array</param>
+    public BlowFish(byte[] cipherKey)
+    {
+        randomSource = new RNGCryptoServiceProvider();
+        SetupKey(cipherKey);
+    }
 
-        //Random number generator for creating IVs
-        RNGCryptoServiceProvider randomSource;
+    #endregion
 
-        //SBLOCKS
-        private uint[] bf_s0;
-        private uint[] bf_s1;
-        private uint[] bf_s2;
-        private uint[] bf_s3;
+    #region "Public methods"
 
-        private uint[] bf_P;
+    /// <summary>
+    /// Encrypts a string in CBC mode
+    /// </summary>
+    /// <param name="pt">Plaintext data to encrypt</param>
+    /// <returns>Ciphertext with IV appended to front</returns>
+    public string Encrypt_CBC(string pt)
+    {
+        if (!IVSet)
+            SetRandomIV();
+        return ByteToHex(InitVector) + ByteToHex(Encrypt_CBC(Encoding.ASCII.GetBytes(pt)));
+    }
 
-        //KEY
-        private byte[] key;
+    /// <summary>
+    /// Decrypts a string in CBC mode
+    /// </summary>
+    /// <param name="ct">Ciphertext with IV appended to front</param>
+    /// <returns>Plaintext</returns>
+    public string Decrypt_CBC(string ct)
+    {
+        IV = HexToByte(ct.Substring(0, 16));
+        return Encoding.ASCII.GetString(Decrypt_CBC(HexToByte(ct.Substring(16)))).Replace("\0", "");
+    }
 
-        //HALF-BLOCKS
-        private uint xl_par;
-        private uint xr_par;
+    /// <summary>
+    /// Decrypts a byte array in CBC mode.
+    /// IV must be created and saved manually.
+    /// </summary>
+    /// <param name="ct">Ciphertext data to decrypt</param>
+    /// <returns>Plaintext</returns>
+    public byte[] Decrypt_CBC(byte[] ct)
+    {
+        return Crypt_CBC(ct, true);
+    }
 
-        //Initialization Vector for CBC and CTR mode
-        private byte[] InitVector;
-        private bool IVSet;
+    /// <summary>
+    /// Encrypts a byte array in CBC mode.
+    /// IV must be created and saved manually.
+    /// </summary>
+    /// <param name="pt">Plaintext data to encrypt</param>
+    /// <returns>Ciphertext</returns>
+    public byte[] Encrypt_CBC(byte[] pt)
+    {
+        return Crypt_CBC(pt, false);
+    }
 
-        //For compatibility with the javascript crypto library:
-        //  http://etherhack.co.uk/symmetric/blowfish/blowfish.html
-        private bool nonStandardMethod;
+    /// <summary>
+    /// Encrypt a string in ECB mode
+    /// </summary>
+    /// <param name="pt">Plaintext to encrypt as ascii string</param>
+    /// <returns>hex value of encrypted data</returns>
+    public string Encrypt_ECB(string pt)
+    {
+        return ByteToHex(Encrypt_ECB(Encoding.ASCII.GetBytes(pt)));
+    }
 
-        #endregion
+    /// <summary>
+    /// Decrypts a string (ECB)
+    /// </summary>
+    /// <param name="ct">hHex string of the ciphertext</param>
+    /// <returns>Plaintext ascii string</returns>
+    public string Decrypt_ECB(string ct)
+    {
+        return Encoding.ASCII.GetString(Decrypt_ECB(HexToByte(ct))).Replace("\0", "");
+    }
 
-        #region "Constructors"
+    /// <summary>
+    /// Encrypts a byte array in ECB mode
+    /// </summary>
+    /// <param name="pt">Plaintext data</param>
+    /// <returns>Ciphertext bytes</returns>
+    public byte[] Encrypt_ECB(byte[] pt)
+    {
+        return Crypt_ECB(pt, false);
+    }
 
-        /// <summary>
-        /// Constructor for hex key
-        /// </summary>
-        /// <param name="hexKey">Cipher key as a hex string</param>
-        public BlowFish(string hexKey)
+    /// <summary>
+    /// Decrypts a byte array (ECB)
+    /// </summary>
+    /// <param name="ct">Ciphertext byte array</param>
+    /// <returns>Plaintext</returns>
+    public byte[] Decrypt_ECB(byte[] ct)
+    {
+        return Crypt_ECB(ct, true);
+    }
+
+    /// <summary>
+    /// Encrypts a string (CTR)
+    /// </summary>
+    /// <param name="pt">The plaintext to encrypt</param>
+    /// <returns>The ciphertext</returns>
+    public string Encrypt_CTR(string pt)
+    {
+        if (!IVSet)
+            SetRandomIV();
+        return ByteToHex(InitVector) + ByteToHex(Crypt_CTR(Encoding.ASCII.GetBytes(pt), 2));
+    }
+
+    /// <summary>
+    /// Decrypt a string (CTR)
+    /// </summary>
+    /// <param name="ct">The ciphertext to decrypt</param>
+    /// <returns>The plaintext</returns>
+    public string Decrypt_CTR(string ct)
+    {
+        IV = HexToByte(ct.Substring(0, 16));
+        return Encoding.ASCII.GetString(Crypt_CTR(HexToByte(ct.Substring(16)), 2)).Replace("\0", "");
+    }
+
+    /// <summary>
+    /// Initialization vector for CBC mode.
+    /// </summary>
+    public byte[] IV
+    {
+        get { return InitVector; }
+        set
         {
-            randomSource = new RNGCryptoServiceProvider();
-            SetupKey(HexToByte(hexKey));
-        }
-
-        /// <summary>
-        /// Constructor for byte key
-        /// </summary>
-        /// <param name="cipherKey">Cipher key as a byte array</param>
-        public BlowFish(byte[] cipherKey)
-        {
-            randomSource = new RNGCryptoServiceProvider();
-            SetupKey(cipherKey);
-        }
-
-        #endregion
-
-        #region "Public methods"
-
-        /// <summary>
-        /// Encrypts a string in CBC mode
-        /// </summary>
-        /// <param name="pt">Plaintext data to encrypt</param>
-        /// <returns>Ciphertext with IV appended to front</returns>
-        public string Encrypt_CBC(string pt)
-        {
-            if (!IVSet)
-                SetRandomIV();
-            return ByteToHex(InitVector) + ByteToHex(Encrypt_CBC(Encoding.ASCII.GetBytes(pt)));
-        }
-
-        /// <summary>
-        /// Decrypts a string in CBC mode
-        /// </summary>
-        /// <param name="ct">Ciphertext with IV appended to front</param>
-        /// <returns>Plaintext</returns>
-        public string Decrypt_CBC(string ct)
-        {
-            IV = HexToByte(ct.Substring(0, 16));
-            return Encoding.ASCII.GetString(Decrypt_CBC(HexToByte(ct.Substring(16)))).Replace("\0", "");
-        }
-
-        /// <summary>
-        /// Decrypts a byte array in CBC mode.
-        /// IV must be created and saved manually.
-        /// </summary>
-        /// <param name="ct">Ciphertext data to decrypt</param>
-        /// <returns>Plaintext</returns>
-        public byte[] Decrypt_CBC(byte[] ct)
-        {
-            return Crypt_CBC(ct, true);
-        }
-
-        /// <summary>
-        /// Encrypts a byte array in CBC mode.
-        /// IV must be created and saved manually.
-        /// </summary>
-        /// <param name="pt">Plaintext data to encrypt</param>
-        /// <returns>Ciphertext</returns>
-        public byte[] Encrypt_CBC(byte[] pt)
-        {
-            return Crypt_CBC(pt, false);
-        }
-
-        /// <summary>
-        /// Encrypt a string in ECB mode
-        /// </summary>
-        /// <param name="pt">Plaintext to encrypt as ascii string</param>
-        /// <returns>hex value of encrypted data</returns>
-        public string Encrypt_ECB(string pt)
-        {
-            return ByteToHex(Encrypt_ECB(Encoding.ASCII.GetBytes(pt)));
-        }
-
-        /// <summary>
-        /// Decrypts a string (ECB)
-        /// </summary>
-        /// <param name="ct">hHex string of the ciphertext</param>
-        /// <returns>Plaintext ascii string</returns>
-        public string Decrypt_ECB(string ct)
-        {
-            return Encoding.ASCII.GetString(Decrypt_ECB(HexToByte(ct))).Replace("\0", "");
-        }
-
-        /// <summary>
-        /// Encrypts a byte array in ECB mode
-        /// </summary>
-        /// <param name="pt">Plaintext data</param>
-        /// <returns>Ciphertext bytes</returns>
-        public byte[] Encrypt_ECB(byte[] pt)
-        {
-            return Crypt_ECB(pt, false);
-        }
-
-        /// <summary>
-        /// Decrypts a byte array (ECB)
-        /// </summary>
-        /// <param name="ct">Ciphertext byte array</param>
-        /// <returns>Plaintext</returns>
-        public byte[] Decrypt_ECB(byte[] ct)
-        {
-            return Crypt_ECB(ct, true);
-        }
-
-        /// <summary>
-        /// Encrypts a string (CTR)
-        /// </summary>
-        /// <param name="pt">The plaintext to encrypt</param>
-        /// <returns>The ciphertext</returns>
-        public string Encrypt_CTR(string pt)
-        {
-            if (!IVSet)
-                SetRandomIV();
-            return ByteToHex(InitVector) + ByteToHex(Crypt_CTR(Encoding.ASCII.GetBytes(pt), 2));
-        }
-
-        /// <summary>
-        /// Decrypt a string (CTR)
-        /// </summary>
-        /// <param name="ct">The ciphertext to decrypt</param>
-        /// <returns>The plaintext</returns>
-        public string Decrypt_CTR(string ct)
-        {
-            IV = HexToByte(ct.Substring(0, 16));
-            return Encoding.ASCII.GetString(Crypt_CTR(HexToByte(ct.Substring(16)), 2)).Replace("\0", "");
-        }
-
-        /// <summary>
-        /// Initialization vector for CBC mode.
-        /// </summary>
-        public byte[] IV
-        {
-            get { return InitVector; }
-            set
+            if (value.Length == 8)
             {
-                if (value.Length == 8)
-                {
-                    InitVector = value;
-                    IVSet = true;
-                }
-                else
-                {
-                    throw new Exception("Invalid IV size.");
-                }
-            }
-        }
-
-        public bool NonStandard
-        {
-            get { return nonStandardMethod; }
-            set { nonStandardMethod = value; }
-        }
-
-        /// <summary>
-        /// Creates and sets a random initialization vector.
-        /// </summary>
-        /// <returns>The random IV</returns>
-        public byte[] SetRandomIV()
-        {
-            InitVector = new byte[8];
-            randomSource.GetBytes(InitVector);
-            IVSet = true;
-            return InitVector;
-        }
-
-        #endregion
-
-        #region Cryptography
-
-        /// <summary>
-        /// Sets up the S-blocks and the key
-        /// </summary>
-        /// <param name="cipherKey">Block cipher key (1-448 bits)</param>
-        private void SetupKey(byte[] cipherKey)
-        {
-            bf_P = SetupP();
-            //set up the S blocks
-            bf_s0 = SetupS0();
-            bf_s1 = SetupS1();
-            bf_s2 = SetupS2();
-            bf_s3 = SetupS3();
-
-            key = new byte[cipherKey.Length]; // 448 bits
-            if (cipherKey.Length > 56)
-            {
-                throw new Exception("Key too long. 56 bytes required.");
-            }
-
-            Buffer.BlockCopy(cipherKey, 0, key, 0, cipherKey.Length);
-            int j = 0;
-            for (int i = 0; i < 18; i++)
-            {
-                uint d = (uint)(((key[j % cipherKey.Length] * 256 + key[(j + 1) % cipherKey.Length]) * 256 + key[(j + 2) % cipherKey.Length]) * 256 + key[(j + 3) % cipherKey.Length]);
-                bf_P[i] ^= d;
-                j = (j + 4) % cipherKey.Length;
-            }
-
-            xl_par = 0;
-            xr_par = 0;
-            for (int i = 0; i < 18; i += 2)
-            {
-                encipher();
-                bf_P[i] = xl_par;
-                bf_P[i + 1] = xr_par;
-            }
-
-            for (int i = 0; i < 256; i += 2)
-            {
-                encipher();
-                bf_s0[i] = xl_par;
-                bf_s0[i + 1] = xr_par;
-            }
-            for (int i = 0; i < 256; i += 2)
-            {
-                encipher();
-                bf_s1[i] = xl_par;
-                bf_s1[i + 1] = xr_par;
-            }
-            for (int i = 0; i < 256; i += 2)
-            {
-                encipher();
-                bf_s2[i] = xl_par;
-                bf_s2[i + 1] = xr_par;
-            }
-            for (int i = 0; i < 256; i += 2)
-            {
-                encipher();
-                bf_s3[i] = xl_par;
-                bf_s3[i + 1] = xr_par;
-            }
-        }
-
-        /// <summary>
-        /// Encrypts or decrypts data in ECB mode
-        /// </summary>
-        /// <param name="text">plain/ciphertext</param>
-        /// <param name="decrypt">true to decrypt, false to encrypt</param>
-        /// <returns>(En/De)crypted data</returns>
-        private byte[] Crypt_ECB(byte[] text, bool decrypt)
-        {
-            int paddedLen = (text.Length % 8 == 0 ? text.Length : text.Length + 8 - (text.Length % 8));
-            byte[] plainText = new byte[paddedLen];
-            Buffer.BlockCopy(text, 0, plainText, 0, text.Length);
-            byte[] block = new byte[8];
-            for (int i = 0; i < plainText.Length; i += 8)
-            {
-                Buffer.BlockCopy(plainText, i, block, 0, 8);
-                if (decrypt)
-                {
-                    BlockDecrypt(ref block);
-                }
-                else
-                {
-                    BlockEncrypt(ref block);
-                }
-                Buffer.BlockCopy(block, 0, plainText, i, 8);
-            }
-            return plainText;
-        }
-
-        public byte[] Crypt_CTR(byte[] text, int numThreads)
-        {
-            if (!IVSet)
-            {
-                throw new Exception("IV not set.");
-            }
-            byte[] input = new byte[8];
-            byte[] counter = new byte[8];
-            int paddedLen = (text.Length % 8 == 0 ? text.Length : text.Length + 8 - (text.Length % 8));
-            byte[] plainText = new byte[paddedLen];
-            Buffer.BlockCopy(text, 0, plainText, 0, text.Length);
-            byte[] block = new byte[8];
-            for (int i = 0; i < plainText.Length; i += 8)
-            {
-                for (int x = 0; x < 8; x++)
-                {
-                    input[x] = (byte)(counter[x] ^ InitVector[x]);
-                }
-                Buffer.BlockCopy(plainText, i, block, 0, 8);
-                BlockEncrypt(ref input);
-                XorBlock(ref block, input);
-                Buffer.BlockCopy(block, 0, plainText, i, 8);
-            }
-            return plainText;
-        }
-
-        /// <summary>
-        /// Encrypts or decrypts data in CBC mode
-        /// </summary>
-        /// <param name="text">plain/ciphertext</param>
-        /// <param name="decrypt">true to decrypt, false to encrypt</param>
-        /// <returns>(En/De)crypted data</returns>
-        private byte[] Crypt_CBC(byte[] text, bool decrypt)
-        {
-            if (!IVSet)
-            {
-                throw new Exception("IV not set.");
-            }
-            int paddedLen = (text.Length % 8 == 0 ? text.Length : text.Length + 8 - (text.Length % 8));
-            byte[] plainText = new byte[paddedLen];
-            Buffer.BlockCopy(text, 0, plainText, 0, text.Length);
-            byte[] block = new byte[8];
-            byte[] preblock = new byte[8];
-            byte[] iv = new byte[8];
-            Buffer.BlockCopy(InitVector, 0, iv, 0, 8);
-            if (!decrypt)
-            {
-                for (int i = 0; i < plainText.Length; i += 8)
-                {
-                    Buffer.BlockCopy(plainText, i, block, 0, 8);
-                    XorBlock(ref block, iv);
-                    BlockEncrypt(ref block);
-                    Buffer.BlockCopy(block, 0, iv, 0, 8);
-                    Buffer.BlockCopy(block, 0, plainText, i, 8);
-                }
+                InitVector = value;
+                IVSet = true;
             }
             else
             {
-                for (int i = 0; i < plainText.Length; i += 8)
-                {
-                    Buffer.BlockCopy(plainText, i, block, 0, 8);
-
-                    Buffer.BlockCopy(block, 0, preblock, 0, 8);
-                    BlockDecrypt(ref block);
-                    XorBlock(ref block, iv);
-                    Buffer.BlockCopy(preblock, 0, iv, 0, 8);
-
-                    Buffer.BlockCopy(block, 0, plainText, i, 8);
-                }
-            }
-            return plainText;
-        }
-
-        /// <summary>
-        /// XoR encrypts two 8 bit blocks
-        /// </summary>
-        /// <param name="block">8 bit block 1</param>
-        /// <param name="iv">8 bit block 2</param>
-        private void XorBlock(ref byte[] block, byte[] iv)
-        {
-            for (int i = 0; i < block.Length; i++)
-            {
-                block[i] ^= iv[i];
+                throw new Exception("Invalid IV size.");
             }
         }
+    }
 
-        /// <summary>
-        /// Encrypts a 64 bit block
-        /// </summary>
-        /// <param name="block">The 64 bit block to encrypt</param>
-        private void BlockEncrypt(ref byte[] block)
+    public bool NonStandard
+    {
+        get { return nonStandardMethod; }
+        set { nonStandardMethod = value; }
+    }
+
+    /// <summary>
+    /// Creates and sets a random initialization vector.
+    /// </summary>
+    /// <returns>The random IV</returns>
+    public byte[] SetRandomIV()
+    {
+        InitVector = new byte[8];
+        randomSource.GetBytes(InitVector);
+        IVSet = true;
+        return InitVector;
+    }
+
+    #endregion
+
+    #region Cryptography
+
+    /// <summary>
+    /// Sets up the S-blocks and the key
+    /// </summary>
+    /// <param name="cipherKey">Block cipher key (1-448 bits)</param>
+    private void SetupKey(byte[] cipherKey)
+    {
+        bf_P = SetupP();
+        //set up the S blocks
+        bf_s0 = SetupS0();
+        bf_s1 = SetupS1();
+        bf_s2 = SetupS2();
+        bf_s3 = SetupS3();
+
+        key = new byte[cipherKey.Length]; // 448 bits
+        if (cipherKey.Length > 56)
         {
-            SetBlock(block);
+            throw new Exception("Key too long. 56 bytes required.");
+        }
+
+        Buffer.BlockCopy(cipherKey, 0, key, 0, cipherKey.Length);
+        int j = 0;
+        for (int i = 0; i < 18; i++)
+        {
+            uint d = (uint)(((key[j % cipherKey.Length] * 256 + key[(j + 1) % cipherKey.Length]) * 256 + key[(j + 2) % cipherKey.Length]) * 256 + key[(j + 3) % cipherKey.Length]);
+            bf_P[i] ^= d;
+            j = (j + 4) % cipherKey.Length;
+        }
+
+        xl_par = 0;
+        xr_par = 0;
+        for (int i = 0; i < 18; i += 2)
+        {
             encipher();
-            GetBlock(ref block);
+            bf_P[i] = xl_par;
+            bf_P[i + 1] = xr_par;
         }
 
-        /// <summary>
-        /// Decrypts a 64 bit block
-        /// </summary>
-        /// <param name="block">The 64 bit block to decrypt</param>
-        private void BlockDecrypt(ref byte[] block)
+        for (int i = 0; i < 256; i += 2)
         {
-            SetBlock(block);
-            decipher();
-            GetBlock(ref block);
+            encipher();
+            bf_s0[i] = xl_par;
+            bf_s0[i + 1] = xr_par;
         }
-
-        /// <summary>
-        /// Splits the block into the two uint values
-        /// </summary>
-        /// <param name="block">the 64 bit block to setup</param>
-        private void SetBlock(byte[] block)
+        for (int i = 0; i < 256; i += 2)
         {
-            byte[] block1 = new byte[4];
-            byte[] block2 = new byte[4];
-            Buffer.BlockCopy(block, 0, block1, 0, 4);
-            Buffer.BlockCopy(block, 4, block2, 0, 4);
-            //split the block
-            if (nonStandardMethod)
+            encipher();
+            bf_s1[i] = xl_par;
+            bf_s1[i + 1] = xr_par;
+        }
+        for (int i = 0; i < 256; i += 2)
+        {
+            encipher();
+            bf_s2[i] = xl_par;
+            bf_s2[i + 1] = xr_par;
+        }
+        for (int i = 0; i < 256; i += 2)
+        {
+            encipher();
+            bf_s3[i] = xl_par;
+            bf_s3[i + 1] = xr_par;
+        }
+    }
+
+    /// <summary>
+    /// Encrypts or decrypts data in ECB mode
+    /// </summary>
+    /// <param name="text">plain/ciphertext</param>
+    /// <param name="decrypt">true to decrypt, false to encrypt</param>
+    /// <returns>(En/De)crypted data</returns>
+    private byte[] Crypt_ECB(byte[] text, bool decrypt)
+    {
+        int paddedLen = (text.Length % 8 == 0 ? text.Length : text.Length + 8 - (text.Length % 8));
+        byte[] plainText = new byte[paddedLen];
+        Buffer.BlockCopy(text, 0, plainText, 0, text.Length);
+        byte[] block = new byte[8];
+        for (int i = 0; i < plainText.Length; i += 8)
+        {
+            Buffer.BlockCopy(plainText, i, block, 0, 8);
+            if (decrypt)
             {
-                xr_par = BitConverter.ToUInt32(block1, 0);
-                xl_par = BitConverter.ToUInt32(block2, 0);
+                BlockDecrypt(ref block);
             }
             else
             {
-                //ToUInt32 requires the bytes in reverse order
-                Array.Reverse(block1);
-                Array.Reverse(block2);
-                xl_par = BitConverter.ToUInt32(block1, 0);
-                xr_par = BitConverter.ToUInt32(block2, 0);
+                BlockEncrypt(ref block);
             }
+            Buffer.BlockCopy(block, 0, plainText, i, 8);
         }
+        return plainText;
+    }
 
-        /// <summary>
-        /// Converts the two uint values into a 64 bit block
-        /// </summary>
-        /// <param name="block">64 bit buffer to receive the block</param>
-        private void GetBlock(ref byte[] block)
+    public byte[] Crypt_CTR(byte[] text, int numThreads)
+    {
+        if (!IVSet)
         {
-            byte[] block1 = new byte[4];
-            byte[] block2 = new byte[4];
-            if (nonStandardMethod)
+            throw new Exception("IV not set.");
+        }
+        byte[] input = new byte[8];
+        byte[] counter = new byte[8];
+        int paddedLen = (text.Length % 8 == 0 ? text.Length : text.Length + 8 - (text.Length % 8));
+        byte[] plainText = new byte[paddedLen];
+        Buffer.BlockCopy(text, 0, plainText, 0, text.Length);
+        byte[] block = new byte[8];
+        for (int i = 0; i < plainText.Length; i += 8)
+        {
+            for (int x = 0; x < 8; x++)
             {
-                block1 = BitConverter.GetBytes(xr_par);
-                block2 = BitConverter.GetBytes(xl_par);
+                input[x] = (byte)(counter[x] ^ InitVector[x]);
             }
-            else
+            Buffer.BlockCopy(plainText, i, block, 0, 8);
+            BlockEncrypt(ref input);
+            XorBlock(ref block, input);
+            Buffer.BlockCopy(block, 0, plainText, i, 8);
+        }
+        return plainText;
+    }
+
+    /// <summary>
+    /// Encrypts or decrypts data in CBC mode
+    /// </summary>
+    /// <param name="text">plain/ciphertext</param>
+    /// <param name="decrypt">true to decrypt, false to encrypt</param>
+    /// <returns>(En/De)crypted data</returns>
+    private byte[] Crypt_CBC(byte[] text, bool decrypt)
+    {
+        if (!IVSet)
+        {
+            throw new Exception("IV not set.");
+        }
+        int paddedLen = (text.Length % 8 == 0 ? text.Length : text.Length + 8 - (text.Length % 8));
+        byte[] plainText = new byte[paddedLen];
+        Buffer.BlockCopy(text, 0, plainText, 0, text.Length);
+        byte[] block = new byte[8];
+        byte[] preblock = new byte[8];
+        byte[] iv = new byte[8];
+        Buffer.BlockCopy(InitVector, 0, iv, 0, 8);
+        if (!decrypt)
+        {
+            for (int i = 0; i < plainText.Length; i += 8)
             {
-                block1 = BitConverter.GetBytes(xl_par);
-                block2 = BitConverter.GetBytes(xr_par);
-
-                //GetBytes returns the bytes in reverse order
-                Array.Reverse(block1);
-                Array.Reverse(block2);
+                Buffer.BlockCopy(plainText, i, block, 0, 8);
+                XorBlock(ref block, iv);
+                BlockEncrypt(ref block);
+                Buffer.BlockCopy(block, 0, iv, 0, 8);
+                Buffer.BlockCopy(block, 0, plainText, i, 8);
             }
-            //join the block
-            Buffer.BlockCopy(block1, 0, block, 0, 4);
-            Buffer.BlockCopy(block2, 0, block, 4, 4);
         }
-
-        /// <summary>
-        /// Runs the blowfish algorithm (standard 16 rounds)
-        /// </summary>
-        private void encipher()
+        else
         {
-            xl_par ^= bf_P[0];
-            for (uint i = 0; i < ROUNDS; i += 2)
+            for (int i = 0; i < plainText.Length; i += 8)
             {
-                xr_par = round(xr_par, xl_par, i + 1);
-                xl_par = round(xl_par, xr_par, i + 2);
+                Buffer.BlockCopy(plainText, i, block, 0, 8);
+
+                Buffer.BlockCopy(block, 0, preblock, 0, 8);
+                BlockDecrypt(ref block);
+                XorBlock(ref block, iv);
+                Buffer.BlockCopy(preblock, 0, iv, 0, 8);
+
+                Buffer.BlockCopy(block, 0, plainText, i, 8);
             }
-            xr_par = xr_par ^ bf_P[17];
-
-            //swap the blocks
-            uint swap = xl_par;
-            xl_par = xr_par;
-            xr_par = swap;
         }
+        return plainText;
+    }
 
-        /// <summary>
-        /// Runs the blowfish algorithm in reverse (standard 16 rounds)
-        /// </summary>
-        private void decipher()
+    /// <summary>
+    /// XoR encrypts two 8 bit blocks
+    /// </summary>
+    /// <param name="block">8 bit block 1</param>
+    /// <param name="iv">8 bit block 2</param>
+    private void XorBlock(ref byte[] block, byte[] iv)
+    {
+        for (int i = 0; i < block.Length; i++)
         {
-            xl_par ^= bf_P[17];
-            for (uint i = 16; i > 0; i -= 2)
-            {
-                xr_par = round(xr_par, xl_par, i);
-                xl_par = round(xl_par, xr_par, i - 1);
-            }
-            xr_par = xr_par ^ bf_P[0];
-
-            //swap the blocks
-            uint swap = xl_par;
-            xl_par = xr_par;
-            xr_par = swap;
+            block[i] ^= iv[i];
         }
+    }
 
-        /// <summary>
-        /// one round of the blowfish algorithm
-        /// </summary>
-        /// <param name="a">See spec</param>
-        /// <param name="b">See spec</param>
-        /// <param name="n">See spec</param>
-        /// <returns></returns>
-        private uint round(uint a, uint b, uint n)
+    /// <summary>
+    /// Encrypts a 64 bit block
+    /// </summary>
+    /// <param name="block">The 64 bit block to encrypt</param>
+    private void BlockEncrypt(ref byte[] block)
+    {
+        SetBlock(block);
+        encipher();
+        GetBlock(ref block);
+    }
+
+    /// <summary>
+    /// Decrypts a 64 bit block
+    /// </summary>
+    /// <param name="block">The 64 bit block to decrypt</param>
+    private void BlockDecrypt(ref byte[] block)
+    {
+        SetBlock(block);
+        decipher();
+        GetBlock(ref block);
+    }
+
+    /// <summary>
+    /// Splits the block into the two uint values
+    /// </summary>
+    /// <param name="block">the 64 bit block to setup</param>
+    private void SetBlock(byte[] block)
+    {
+        byte[] block1 = new byte[4];
+        byte[] block2 = new byte[4];
+        Buffer.BlockCopy(block, 0, block1, 0, 4);
+        Buffer.BlockCopy(block, 4, block2, 0, 4);
+        //split the block
+        if (nonStandardMethod)
         {
-            uint x1 = (bf_s0[wordByte0(b)] + bf_s1[wordByte1(b)]) ^ bf_s2[wordByte2(b)];
-            uint x2 = x1 + bf_s3[this.wordByte3(b)];
-            uint x3 = x2 ^ bf_P[n];
-            return x3 ^ a;
+            xr_par = BitConverter.ToUInt32(block1, 0);
+            xl_par = BitConverter.ToUInt32(block2, 0);
         }
-
-        #endregion
-
-        #region SBLOCKS
-        //SBLOCKS ARE THE HEX DIGITS OF PI. 
-        //The amount of hex digits can be increased if you want to experiment with more rounds and longer key lengths
-
-        //Increase the size of this array when increasing the number of rounds
-        private uint[] SetupP()
+        else
         {
-            return new uint[] {
+            //ToUInt32 requires the bytes in reverse order
+            Array.Reverse(block1);
+            Array.Reverse(block2);
+            xl_par = BitConverter.ToUInt32(block1, 0);
+            xr_par = BitConverter.ToUInt32(block2, 0);
+        }
+    }
+
+    /// <summary>
+    /// Converts the two uint values into a 64 bit block
+    /// </summary>
+    /// <param name="block">64 bit buffer to receive the block</param>
+    private void GetBlock(ref byte[] block)
+    {
+        byte[] block1 = new byte[4];
+        byte[] block2 = new byte[4];
+        if (nonStandardMethod)
+        {
+            block1 = BitConverter.GetBytes(xr_par);
+            block2 = BitConverter.GetBytes(xl_par);
+        }
+        else
+        {
+            block1 = BitConverter.GetBytes(xl_par);
+            block2 = BitConverter.GetBytes(xr_par);
+
+            //GetBytes returns the bytes in reverse order
+            Array.Reverse(block1);
+            Array.Reverse(block2);
+        }
+        //join the block
+        Buffer.BlockCopy(block1, 0, block, 0, 4);
+        Buffer.BlockCopy(block2, 0, block, 4, 4);
+    }
+
+    /// <summary>
+    /// Runs the blowfish algorithm (standard 16 rounds)
+    /// </summary>
+    private void encipher()
+    {
+        xl_par ^= bf_P[0];
+        for (uint i = 0; i < ROUNDS; i += 2)
+        {
+            xr_par = round(xr_par, xl_par, i + 1);
+            xl_par = round(xl_par, xr_par, i + 2);
+        }
+        xr_par = xr_par ^ bf_P[17];
+
+        //swap the blocks
+        uint swap = xl_par;
+        xl_par = xr_par;
+        xr_par = swap;
+    }
+
+    /// <summary>
+    /// Runs the blowfish algorithm in reverse (standard 16 rounds)
+    /// </summary>
+    private void decipher()
+    {
+        xl_par ^= bf_P[17];
+        for (uint i = 16; i > 0; i -= 2)
+        {
+            xr_par = round(xr_par, xl_par, i);
+            xl_par = round(xl_par, xr_par, i - 1);
+        }
+        xr_par = xr_par ^ bf_P[0];
+
+        //swap the blocks
+        uint swap = xl_par;
+        xl_par = xr_par;
+        xr_par = swap;
+    }
+
+    /// <summary>
+    /// one round of the blowfish algorithm
+    /// </summary>
+    /// <param name="a">See spec</param>
+    /// <param name="b">See spec</param>
+    /// <param name="n">See spec</param>
+    /// <returns></returns>
+    private uint round(uint a, uint b, uint n)
+    {
+        uint x1 = (bf_s0[wordByte0(b)] + bf_s1[wordByte1(b)]) ^ bf_s2[wordByte2(b)];
+        uint x2 = x1 + bf_s3[wordByte3(b)];
+        uint x3 = x2 ^ bf_P[n];
+        return x3 ^ a;
+    }
+
+    #endregion
+
+    #region SBLOCKS
+    //SBLOCKS ARE THE HEX DIGITS OF PI. 
+    //The amount of hex digits can be increased if you want to experiment with more rounds and longer key lengths
+
+    //Increase the size of this array when increasing the number of rounds
+    private uint[] SetupP()
+    {
+        return new uint[] {
                 0x243f6a88,0x85a308d3,0x13198a2e,0x03707344,0xa4093822,0x299f31d0,
                     0x082efa98,0xec4e6c89,0x452821e6,0x38d01377,0xbe5466cf,0x34e90c6c,
                     0xc0ac29b7,0xc97c50dd,0x3f84d5b5,0xb5470917,0x9216d5d9,0x8979fb1b
             };
-        }
+    }
 
-        private uint[] SetupS0()
-        {
-            return new uint[] {
+    private uint[] SetupS0()
+    {
+        return new uint[] {
                     0xd1310ba6,0x98dfb5ac,0x2ffd72db,0xd01adfb7,0xb8e1afed,0x6a267e96,
                     0xba7c9045,0xf12c7f99,0x24a19947,0xb3916cf7,0x0801f2e2,0x858efc16,
                     0x636920d8,0x71574e69,0xa458fea3,0xf4933d7e,0x0d95748f,0x728eb658,
@@ -642,11 +640,11 @@ namespace ConteriePlan
                     0xf296ec6b,0x2a0dd915,0xb6636521,0xe7b9f9b6,0xff34052e,0xc5855664,
                     0x53b02d5d,0xa99f8fa1,0x08ba4799,0x6e85076a
             };
-        }
+    }
 
-        private uint[] SetupS1()
-        {
-            return new uint[] {
+    private uint[] SetupS1()
+    {
+        return new uint[] {
                 0x4b7a70e9,0xb5b32944,0xdb75092e,0xc4192623,0xad6ea6b0,0x49a7df7d,
                     0x9cee60b8,0x8fedb266,0xecaa8c71,0x699a17ff,0x5664526c,0xc2b19ee1,
                     0x193602a5,0x75094c29,0xa0591340,0xe4183a3e,0x3f54989a,0x5b429d65,
@@ -691,11 +689,11 @@ namespace ConteriePlan
                     0x675fda79,0xe3674340,0xc5c43465,0x713e38d8,0x3d28f89e,0xf16dff20,
                     0x153e21e7,0x8fb03d4a,0xe6e39f2b,0xdb83adf7
             };
-        }
+    }
 
-        private uint[] SetupS2()
-        {
-            return new uint[] {
+    private uint[] SetupS2()
+    {
+        return new uint[] {
                 0xe93d5a68,0x948140f7,0xf64c261c,0x94692934,0x411520f7,0x7602d4f7,
                     0xbcf46b2e,0xd4a20068,0xd4082471,0x3320f46a,0x43b7d4b7,0x500061af,
                     0x1e39f62e,0x97244546,0x14214f74,0xbf8b8840,0x4d95fc1d,0x96b591af,
@@ -740,11 +738,11 @@ namespace ConteriePlan
                     0xa28514d9,0x6c51133c,0x6fd5c7e7,0x56e14ec4,0x362abfce,0xddc6c837,
                     0xd79a3234,0x92638212,0x670efa8e,0x406000e0
             };
-        }
+    }
 
-        private uint[] SetupS3()
-        {
-            return new uint[] {
+    private uint[] SetupS3()
+    {
+        return new uint[] {
                     0x3a39ce37,0xd3faf5cf,0xabc27737,0x5ac52d1b,0x5cb0679e,0x4fa33742,
                     0xd3822740,0x99bc9bbe,0xd5118e9d,0xbf0f7315,0xd62d1c7e,0xc700c47b,
                     0xb78c1b6b,0x21a19045,0xb26eb1be,0x6a366eb4,0x5748ab2f,0xbc946e79,
@@ -789,93 +787,92 @@ namespace ConteriePlan
                     0x01c36ae4,0xd6ebe1f9,0x90d4f869,0xa65cdea0,0x3f09252d,0xc208e69f,
                     0xb74e6132,0xce77e25b,0x578fdfe3,0x3ac372e6
             };
-        }
-
-        #endregion
-
-        #region Conversions
-
-        //gets the first byte in a uint
-        private byte wordByte0(uint w)
-        {
-            return (byte)(w / 256 / 256 / 256 % 256);
-        }
-
-        //gets the second byte in a uint
-        private byte wordByte1(uint w)
-        {
-            return (byte)(w / 256 / 256 % 256);
-        }
-
-        //gets the third byte in a uint
-        private byte wordByte2(uint w)
-        {
-            return (byte)(w / 256 % 256);
-        }
-
-        //gets the fourth byte in a uint
-        private byte wordByte3(uint w)
-        {
-            return (byte)(w % 256);
-        }
-
-        //converts a byte array to a hex string
-        private string ByteToHex(byte[] bytes)
-        {
-            StringBuilder s = new StringBuilder();
-            foreach (byte b in bytes)
-                s.Append(b.ToString("x2"));
-            return s.ToString();
-        }
-
-        //converts a hex string to a byte array
-        private byte[] HexToByte(string hex)
-        {
-            byte[] r = new byte[hex.Length / 2];
-            for (int i = 0; i < hex.Length - 1; i += 2)
-            {
-                byte a = GetHex(hex[i]);
-                byte b = GetHex(hex[i + 1]);
-                r[i / 2] = (byte)(a * 16 + b);
-            }
-            return r;
-        }
-
-        //converts a single hex character to it‘s decimal value
-        private byte GetHex(char x)
-        {
-            if (x <= '9' && x >= '0')
-            {
-                return (byte)(x - '0');
-            }
-            else if (x <= 'z' && x >= 'a')
-            {
-                return (byte)(x - 'a' + 10);
-            }
-            else if (x <= 'Z' && x >= 'A')
-            {
-                return (byte)(x - 'A' + 10);
-            }
-            return 0;
-        }
-
-        #endregion
     }
 
-    internal class BlowFishSample
+    #endregion
+
+    #region Conversions
+
+    //gets the first byte in a uint
+    private byte wordByte0(uint w)
     {
-        private void Program()
+        return (byte)(w / 256 / 256 / 256 % 256);
+    }
+
+    //gets the second byte in a uint
+    private byte wordByte1(uint w)
+    {
+        return (byte)(w / 256 / 256 % 256);
+    }
+
+    //gets the third byte in a uint
+    private byte wordByte2(uint w)
+    {
+        return (byte)(w / 256 % 256);
+    }
+
+    //gets the fourth byte in a uint
+    private byte wordByte3(uint w)
+    {
+        return (byte)(w % 256);
+    }
+
+    //converts a byte array to a hex string
+    private string ByteToHex(byte[] bytes)
+    {
+        StringBuilder s = new StringBuilder();
+        foreach (byte b in bytes)
+            s.Append(b.ToString("x2"));
+        return s.ToString();
+    }
+
+    //converts a hex string to a byte array
+    private byte[] HexToByte(string hex)
+    {
+        byte[] r = new byte[hex.Length / 2];
+        for (int i = 0; i < hex.Length - 1; i += 2)
         {
-            string key = "this is my key";
-            BlowFish algo = new BlowFish(key);
-
-            string encryptedTxt = algo.Encrypt_CBC("this is my test string");
-            string decryptedTxt = algo.Decrypt_CBC(encryptedTxt);
-
-            algo = new BlowFish(key);
-            byte[] encryptedTxt1 = algo.Encrypt_ECB(Encoding.UTF8.GetBytes(key));
-            byte[] decryptedTxt1 = algo.Decrypt_ECB(encryptedTxt1);
-            string gg = Encoding.UTF8.GetString(decryptedTxt1);
+            byte a = GetHex(hex[i]);
+            byte b = GetHex(hex[i + 1]);
+            r[i / 2] = (byte)(a * 16 + b);
         }
+        return r;
+    }
+
+    //converts a single hex character to it‘s decimal value
+    private byte GetHex(char x)
+    {
+        if (x <= '9' && x >= '0')
+        {
+            return (byte)(x - '0');
+        }
+        else if (x <= 'z' && x >= 'a')
+        {
+            return (byte)(x - 'a' + 10);
+        }
+        else if (x <= 'Z' && x >= 'A')
+        {
+            return (byte)(x - 'A' + 10);
+        }
+        return 0;
+    }
+
+    #endregion
+}
+
+internal class BlowFishSample
+{
+    private void Program()
+    {
+        string key = "this is my key";
+        BlowFish algo = new BlowFish(key);
+
+        string encryptedTxt = algo.Encrypt_CBC("this is my test string");
+        string decryptedTxt = algo.Decrypt_CBC(encryptedTxt);
+
+        algo = new BlowFish(key);
+        byte[] encryptedTxt1 = algo.Encrypt_ECB(Encoding.UTF8.GetBytes(key));
+        byte[] decryptedTxt1 = algo.Decrypt_ECB(encryptedTxt1);
+        string gg = Encoding.UTF8.GetString(decryptedTxt1);
     }
 }

@@ -5,120 +5,16 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 
+/// <summary>
+/// 傅里叶变换
+/// </summary>
 public static class FourierTransform
 {
+    /// <summary>
+    /// 2Pi
+    /// </summary>
     public const double TAU = 2.0 * Math.PI;
 
-    public static void fftLearn(Complex[] src, ref Complex[] dst, double id = 1.0)
-    {
-        var totalCount = src.Length;
-        fft(src, ref dst, id);
-        if (id < 0.0)
-            for (int i = 0; i < dst.Length; i++)
-                dst[i] /= dst.Length;
-
-        void fft(Complex[] src, ref Complex[] dst, double id = 1.0)
-        {
-            var sampleCount = src.Length;
-            var halfCount = sampleCount / 2;
-
-            if (dst == null || dst == src || dst.Length != sampleCount)
-                dst = new Complex[sampleCount];
-
-            if (sampleCount == 1)
-            {
-                src.CopyTo(dst, 0);
-                return;
-            }
-
-            var Pe = new Complex[halfCount];
-            var Po = new Complex[halfCount];
-            for (int i = 0; i < halfCount; i++)
-            {
-                Pe[i] = src[i * 2];
-                Po[i] = src[i * 2 + 1];
-            }
-
-            if (halfCount > 1)
-            {
-                fft(Pe, ref Pe, id);
-                fft(Po, ref Po, id);
-            }
-
-            var radTemp = -id * TAU / sampleCount;
-            for (int i = 0; i < halfCount; i++)
-            {
-                var pe = Pe[i];
-                var po = Po[i];
-                var rad = radTemp * i;
-                //var w_mul_po = po;
-                //dst[i] = pe;
-                //dst[i + halfCount] = po;
-                var w_mul_po = new Complex(Math.Cos(rad), Math.Sin(rad)) * po;
-                dst[i] = pe + w_mul_po;
-                dst[i + halfCount] = pe - w_mul_po;
-            }
-        }
-    }
-
-    public static void FFT(Complex[] src, ref Complex[] dst, double id = 1.0)
-    {
-        var rank = Math.Log(src.Length, 2);
-        if (rank != Math.Floor(rank))
-        {
-            throw new Exception("给定的源数据长度必须是2的指数次倍。");
-            //var newLen = Convert.ToInt32(Math.Pow(2, Math.Ceiling(rank)));
-            //dst = new Complex[newLen];
-        }
-        else if (dst == null || dst == src || dst.Length != src.Length)
-            dst = new Complex[src.Length];
-        var tempList = new Complex[dst.Length];
-
-        src.CopyTo(dst, 0);
-
-        fft(dst, tempList, 0, dst.Length, id);
-
-        if (id < 0.0)
-            for (int i = 0; i < dst.Length; i++)
-                dst[i] /= dst.Length;
-
-        void fft(Complex[] dst, Complex[] temp, int start, int count, double id = 1.0)
-        {
-            var halfCount = count / 2;
-
-            if (count > 2)
-            {
-                for (int i = 0; i < halfCount; i++)
-                {
-                    var index = start + i * 2;
-                    temp[i] = dst[index];
-                    temp[i + halfCount] = dst[index + 1];
-                }
-
-                Array.Copy(temp, 0, dst, start, count);
-            }
-
-            if (halfCount > 1)
-            {
-                fft(dst, temp, start, halfCount, id);
-                fft(dst, temp, start + halfCount, halfCount, id);
-            }
-
-            Array.Copy(dst, start, temp, start, count);
-            var radTemp = -id * TAU / count;
-            for (int i = 0; i < halfCount; i++)
-            {
-                var peIndex = start + i;
-                var poIndex = peIndex + halfCount;
-                var pe = temp[peIndex];
-                var po = temp[poIndex];
-                var rad = radTemp * i;
-                var w_mul_po = new Complex(Math.Cos(rad), Math.Sin(rad)) * po;
-                dst[peIndex] = pe + w_mul_po;
-                dst[poIndex] = pe - w_mul_po;
-            }
-        }
-    }
 
     /// <summary>
     /// 快速傅里叶变换(FFT)
@@ -127,7 +23,7 @@ public static class FourierTransform
     /// <param name="dst">目标数据</param>
     /// <param name="id">傅里叶变换为 1 ，逆变换为 -1</param>
     /// <returns></returns>
-    public static void FFTOLD(Complex[] src, ref Complex[] dst, double id = 1.0)
+    public static void FFT(Complex[] src, ref Complex[] dst, double id = 1.0)
     {
         var sampleCount = src.Length;
         var rank = Math.Log(src.Length, 2);
@@ -202,6 +98,173 @@ public static class FourierTransform
             j += k;
         }
     }
+    /// <summary>
+    /// 二维快速傅里叶变换(FFT2D)
+    /// </summary>
+    /// <param name="src"></param>
+    /// <param name="dst"></param>
+    /// <param name="id"></param>
+    public static void FFT2D(Complex[,] src, ref Complex[,] dst, double id = 1.0)
+    {
+        var sampleCount = src.Length;
+        var width = src.GetLength(0);
+        var height = src.GetLength(1);
+
+        double rankW = Math.Log(width, 2), rankH = Math.Log(height, 2);
+        if (rankW != Math.Floor(rankW) || rankH != Math.Floor(rankH))
+            throw new Exception("给定的源数据长度必须是2的指数次倍。");
+
+        if (dst == null || src == dst || dst.Length != sampleCount)
+            dst = new Complex[width, height];
+        Array.Copy(src, dst, src.Length);
+
+        for (int x = 0; x < width; x++)
+        {
+            var ns = height / 2;
+            var radTemp = 2.0 * Math.PI / height;
+
+            while (ns >= 1)
+            {
+                var arg = 0;
+                for (var j0 = 0; j0 < height; j0 += 2 * ns)
+                {
+                    var k = height / 4;
+
+                    var th = -id * radTemp * arg;
+                    var compTh = new Complex(Math.Cos(th), Math.Sin(th));
+
+                    for (var i0 = j0; i0 < j0 + ns; i0++)
+                    {
+                        var i1 = i0 + ns;
+
+                        var comp = dst[x, i1] * compTh;
+
+                        dst[x, i1] = dst[x, i0] - comp;
+                        dst[x, i0] = dst[x, i0] + comp;
+                    }
+
+                    while (k <= arg)
+                    {
+                        arg -= k;
+                        k /= 2;
+
+                        if (k == 0) break;
+                    }
+
+                    arg += k;
+                }
+                ns /= 2;
+            }
+
+            var j = 1;
+            for (var i = 1; i < height; i++)
+            {
+                if (i <= j)
+                {
+                    var comp = dst[x, i - 1];
+                    dst[x, i - 1] = dst[x, j - 1];
+                    dst[x, j - 1] = comp;
+                }
+                var k = height / 2;
+
+                while (k < j)
+                {
+                    j -= k;
+                    k /= 2;
+                }
+                j += k;
+            }
+        }
+        for (int y = 0; y < height; y++)
+        {
+            var ns = width / 2;
+            var radTemp = 2.0 * Math.PI / width;
+
+            while (ns >= 1)
+            {
+                var arg = 0;
+                for (var j0 = 0; j0 < width; j0 += 2 * ns)
+                {
+                    var k = width / 4;
+
+                    var th = -id * radTemp * arg;
+                    var compTh = new Complex(Math.Cos(th), Math.Sin(th));
+
+                    for (var i0 = j0; i0 < j0 + ns; i0++)
+                    {
+                        var i1 = i0 + ns;
+
+                        var comp = dst[i1, y] * compTh;
+
+                        dst[i1, y] = dst[i0, y] - comp;
+                        dst[i0, y] = dst[i0, y] + comp;
+                    }
+
+                    while (k <= arg)
+                    {
+                        arg -= k;
+                        k /= 2;
+
+                        if (k == 0) break;
+                    }
+
+                    arg += k;
+                }
+                ns /= 2;
+            }
+
+            var j = 1;
+            for (var i = 1; i < width; i++)
+            {
+                if (i <= j)
+                {
+                    var comp = dst[i - 1, y];
+                    dst[i - 1, y] = dst[j - 1, y];
+                    dst[j - 1, y] = comp;
+                }
+                var k = width / 2;
+
+                while (k < j)
+                {
+                    j -= k;
+                    k /= 2;
+                }
+                j += k;
+            }
+        }
+
+        if (id < 0.0)
+            for (int h = 0; h < height; h++)
+                for (int w = 0; w < width; w++)
+                {
+                    dst[w, h] /= sampleCount;
+                    //dst[w, h] /= Math.Sqrt(sampleCount);
+                }
+    }
+
+    public static void FtShift(Complex[,] src, ref Complex[,] dst, double id = 1.0)
+    {
+        var width = src.GetLength(0);
+        var height = src.GetLength(1);
+        (int x, int y) half = (width / 2, height / 2);
+        (int x, int y) offset = (half.x + (width % 2), half.y + (height % 2));
+
+        if (dst == null || src == dst || dst.GetLength(0) != width || dst.GetLength(1) != height)
+            dst = new Complex[width, height];
+
+        for (int h = 0; h < height; h++)
+            for (int w = 0; w < width; w++)
+            {
+                int x = w, y = h;
+                if (w < half.x) x = w + offset.x;
+                else x = w - half.x;
+                if (h < half.y) y = h + offset.y;
+                else y = h - half.y;
+
+                if (id > 0) dst[w, h] = src[x, y];
+                else dst[x, y] = src[w, h];
+            }
+    }
 
     /// <summary>
     /// 离散傅里叶变换(DFT)
@@ -228,64 +291,22 @@ public static class FourierTransform
             dst[_w_t] = sum / (id < 0.0 ? (sampleCount) : 1.0);
         }
     }
-    public static void DFT(double[] src, ref Complex[] dst)
-        => DFT(src.Select(n => new Complex(n)).ToArray(), ref dst);
-    public static void IDFT(Complex[] src, ref double[] dst)
-    {
-        if (dst == null || dst.Length != src.Length)
-            dst = new double[src.Length];
 
-        Complex[] tempDst = null;
-        DFT(src, ref tempDst, -1.0);
-
-        for (int i = 0; i < src.Length; i++)
-            dst[i] = tempDst[i].real;
-    }
-
-    public static void DFT2D(Complex[] src, int width, int height, ref Complex[] dst, double id = 1.0)
-    {
-        var sampleCount = src.Length;
-        if (sampleCount != width * height)
-            throw null;
-
-        if (dst == null || dst.Length != sampleCount)
-            dst = new Complex[sampleCount];
-        var tempDst = new Complex[sampleCount];
-
-        for (int x = 0; x < width; x++)
-        {
-            for (int _w_t = 0; _w_t < height; _w_t++)
-            {
-                var sum = Complex.Zero;
-                for (int _t_w = 0; _t_w < height; _t_w++)
-                {
-                    var radTemp = TAU * _t_w * _w_t / height;
-                    sum += src[x * width + _t_w] * new Complex(Math.Cos(radTemp), -id * Math.Sin(radTemp));
-                }
-                //tempDst[x, _w_t] = sum / Math.Sqrt(height);
-                tempDst[x * width + _w_t] = sum / (id < 0 ? height : 1.0);
-            }
-        }
-        for (int y = 0; y < height; y++)
-        {
-            for (int _w_t = 0; _w_t < width; _w_t++)
-            {
-                var sum = Complex.Zero;
-                for (int _t_w = 0; _t_w < width; _t_w++)
-                {
-                    var radTemp = TAU * _t_w * _w_t / width;
-                    sum += tempDst[y + width * _t_w] * new Complex(Math.Cos(radTemp), -id * Math.Sin(radTemp));
-                }
-                //dst[_w_t, y] = sum / Math.Sqrt(width);
-                dst[y + width * _w_t] = sum / (id < 0 ? width : 1.0);
-            }
-        }
-    }
+    /// <summary>
+    /// 二维离散傅里叶变换(DFT2D)
+    /// </summary>
+    /// <param name="src"></param>
+    /// <param name="dst"></param>
+    /// <param name="id"></param>
     public static void DFT2D(Complex[,] src, ref Complex[,] dst, double id = 1.0)
     {
         var sampleCount = src.Length;
         var width = src.GetLength(0);
         var height = src.GetLength(1);
+
+        double rankW = Math.Log(width, 2), rankH = Math.Log(height, 2);
+        if (rankW != Math.Floor(rankW) || rankH != Math.Floor(rankH))
+            throw new Exception("给定的源数据长度必须是2的指数次倍。");
 
         if (dst == null || dst.Length != sampleCount)
             dst = new Complex[width, height];
@@ -375,9 +396,122 @@ public static class FourierTransform
         }
     }
 
+
+    //public static void fftLearn(Complex[] src, ref Complex[] dst, double id = 1.0)
+    //{
+    //    var totalCount = src.Length;
+    //    fft(src, ref dst, id);
+    //    if (id < 0.0)
+    //        for (int i = 0; i < dst.Length; i++)
+    //            dst[i] /= dst.Length;
+
+    //    void fft(Complex[] src, ref Complex[] dst, double id = 1.0)
+    //    {
+    //        var sampleCount = src.Length;
+    //        var halfCount = sampleCount / 2;
+
+    //        if (dst == null || dst == src || dst.Length != sampleCount)
+    //            dst = new Complex[sampleCount];
+
+    //        if (sampleCount == 1)
+    //        {
+    //            src.CopyTo(dst, 0);
+    //            return;
+    //        }
+
+    //        var Pe = new Complex[halfCount];
+    //        var Po = new Complex[halfCount];
+    //        for (int i = 0; i < halfCount; i++)
+    //        {
+    //            Pe[i] = src[i * 2];
+    //            Po[i] = src[i * 2 + 1];
+    //        }
+
+    //        if (halfCount > 1)
+    //        {
+    //            fft(Pe, ref Pe, id);
+    //            fft(Po, ref Po, id);
+    //        }
+
+    //        var radTemp = -id * TAU / sampleCount;
+    //        for (int i = 0; i < halfCount; i++)
+    //        {
+    //            var pe = Pe[i];
+    //            var po = Po[i];
+    //            var rad = radTemp * i;
+    //            //var w_mul_po = po;
+    //            //dst[i] = pe;
+    //            //dst[i + halfCount] = po;
+    //            var w_mul_po = new Complex(Math.Cos(rad), Math.Sin(rad)) * po;
+    //            dst[i] = pe + w_mul_po;
+    //            dst[i + halfCount] = pe - w_mul_po;
+    //        }
+    //    }
+    //}
+    //public static void FFTLearn(Complex[] src, ref Complex[] dst, double id = 1.0)
+    //{
+    //    var rank = Math.Log(src.Length, 2);
+    //    if (rank != Math.Floor(rank))
+    //    {
+    //        throw new Exception("给定的源数据长度必须是2的指数次倍。");
+    //        //var newLen = Convert.ToInt32(Math.Pow(2, Math.Ceiling(rank)));
+    //        //dst = new Complex[newLen];
+    //    }
+    //    else if (dst == null || dst == src || dst.Length != src.Length)
+    //        dst = new Complex[src.Length];
+    //    var tempList = new Complex[dst.Length];
+
+    //    src.CopyTo(dst, 0);
+
+    //    fft(dst, tempList, 0, dst.Length, id);
+
+    //    if (id < 0.0)
+    //        for (int i = 0; i < dst.Length; i++)
+    //            dst[i] /= dst.Length;
+
+    //    void fft(Complex[] dst, Complex[] temp, int start, int count, double id = 1.0)
+    //    {
+    //        var halfCount = count / 2;
+
+    //        if (count > 2)
+    //        {
+    //            for (int i = 0; i < halfCount; i++)
+    //            {
+    //                var index = start + i * 2;
+    //                temp[i] = dst[index];
+    //                temp[i + halfCount] = dst[index + 1];
+    //            }
+
+    //            Array.Copy(temp, 0, dst, start, count);
+    //        }
+
+    //        if (halfCount > 1)
+    //        {
+    //            fft(dst, temp, start, halfCount, id);
+    //            fft(dst, temp, start + halfCount, halfCount, id);
+    //        }
+
+    //        Array.Copy(dst, start, temp, start, count);
+    //        var radTemp = -id * TAU / count;
+    //        for (int i = 0; i < halfCount; i++)
+    //        {
+    //            var peIndex = start + i;
+    //            var poIndex = peIndex + halfCount;
+    //            var pe = temp[peIndex];
+    //            var po = temp[poIndex];
+    //            var rad = radTemp * i;
+    //            var w_mul_po = new Complex(Math.Cos(rad), Math.Sin(rad)) * po;
+    //            dst[peIndex] = pe + w_mul_po;
+    //            dst[poIndex] = pe - w_mul_po;
+    //        }
+    //    }
+    //}
 }
 
 
+/// <summary>
+/// 复数
+/// </summary>
 public struct Complex
 {
     public double real;

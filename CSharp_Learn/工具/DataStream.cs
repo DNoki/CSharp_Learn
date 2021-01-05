@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
-using System.Text;
 
+/// <summary>
+/// 数据处理流
+/// </summary>
 public class DataStream
 {
     private readonly Stream _stream = null;
@@ -43,7 +45,7 @@ public class DataStream
     public void Write(ulong value) => _writer.Write(value);
     public void Write(uint value) => _writer.Write(value);
     public void Write(ushort value) => _writer.Write(value);
-    public void Write(in string value) => _writer.Write(value);
+    public void Write(string value) => _writer.Write(value);
     public void Write(float value) => _writer.Write(value);
     public void Write(sbyte value) => _writer.Write(value);
     public void Write(long value) => _writer.Write(value);
@@ -59,7 +61,6 @@ public class DataStream
     public void Write(double value) => _writer.Write(value);
     public void Write(char ch) => _writer.Write(ch);
 
-    public int Read() => _reader.Read();
     public int Read(byte[] buffer, int index, int count) => _reader.Read(buffer, index, count);
     public int Read(char[] buffer, int index, int count) => _reader.Read(buffer, index, count);
     public bool ReadBoolean() => _reader.ReadBoolean();
@@ -204,12 +205,6 @@ public class DataStream
     public DataStream()
     {
         _stream = new MemoryStream();
-        _reader = new BinaryReader(_stream);
-        _writer = new BinaryWriter(_stream);
-    }
-    public DataStream(Stream stream)
-    {
-        _stream = stream;
         _reader = new BinaryReader(_stream);
         _writer = new BinaryWriter(_stream);
     }

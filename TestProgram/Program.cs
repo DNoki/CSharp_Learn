@@ -19,7 +19,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace CSharp_Learn
+namespace TestProgram
 {
     public static class Program
     {
