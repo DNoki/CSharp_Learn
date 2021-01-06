@@ -1,9 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
+    <OutputType>Library</OutputType>
     <TargetFramework>netcoreapp3.1</TargetFramework>
-    <StartupObject>CSharp_Learn.Program</StartupObject>
+    <AssemblyName>StudyNotes</AssemblyName>
+    <RootNamespace>StudyNotes</RootNamespace>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
@@ -11,7 +12,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\StudyNotes\StudyNotes.csproj" />
+    <PackageReference Include="IronPython" Version="2.7.11" />
+    <PackageReference Include="NLua" Version="1.5.6" />
   </ItemGroup>
 
 </Project>

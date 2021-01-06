@@ -5,7 +5,7 @@ VisualStudioVersion = 16.0.30320.27
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CSharp_Learn", "CSharp_Learn\CSharp_Learn.csproj", "{E3165A9F-BFAF-4987-95E7-C95E7F7E7E31}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestProgram", "TestProgram\TestProgram.csproj", "{AB1848BA-A93E-46A7-8043-E11E3A9BF8D3}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "StudyNotes", "StudyNotes\StudyNotes.csproj", "{AB1848BA-A93E-46A7-8043-E11E3A9BF8D3}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
