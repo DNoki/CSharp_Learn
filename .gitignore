@@ -1,3 +1,11 @@
+﻿# VS Generat
 .vs/
+
+
+# CSharp Generat
 obj/
 bin/
+
+
+# Cpp Generat
+Debug
