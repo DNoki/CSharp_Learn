@@ -71,6 +71,26 @@ public class InteroperationWithUnmanagedCode
     [DllImport(DLL_PATH, EntryPoint = "SampleFunction")]
     private static extern void SampleFunctionChangedName();
 
+    /// <summary>
+    /// 基本类型传递
+    /// </summary>
+    /// <param name="_void_P"></param>
+    /// <param name="_short"></param>
+    /// <param name="_ushort"></param>
+    /// <param name="_int"></param>
+    /// <param name="_uint"></param>
+    /// <param name="_long"></param>
+    /// <param name="_ulong"></param>
+    /// <param name="_bool"></param>
+    /// <param name="_float"></param>
+    /// <param name="_double"></param>
+    /// <param name="_char"></param>
+    /// <param name="_uchar"></param>
+    /// <param name="_wchar_t"></param>
+    /// <param name="_char_P"></param>
+    /// <param name="_C_char_P"></param>
+    /// <param name="_wchar_t_P"></param>
+    /// <param name="_C_wchar_t_P"></param>
     [DllImport(DLL_PATH)]
     private static extern void SampleBaseType(
         IntPtr _void_P,
@@ -124,9 +144,9 @@ public class InteroperationWithUnmanagedCode
             default(bool),
             float.MaxValue,
             double.MaxValue,
-            char.MaxValue,
-            byte.MaxValue,
-            char.MaxValue,
+            'C',
+            (byte)'C',
+            'C',
             "_char_P",
             "_C_char_P",
             "_wchar_t_P",

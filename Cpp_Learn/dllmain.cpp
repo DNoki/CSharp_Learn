@@ -53,24 +53,24 @@ void SampleBaseType(
     const char* _C_char_P,
     wchar_t* _wchar_t_P,
     const wchar_t* _C_wchar_t_P
-    )
+)
 {
     cout << "SampleBaseType()" << endl;
-    cout << _void_P << endl;
-    cout << _short << endl;
-    cout << _ushort << endl;
-    cout << _int << endl;
-    cout << _uint << endl;
-    cout << _long << endl;
-    cout << _ulong << endl;
-    cout << _bool << endl;
-    cout << _float << endl;
-    cout << _double << endl;
-    cout << _char << endl;
-    cout << _uchar << endl;
-    cout << _wchar_t << endl;
-    cout << _char_P << endl;
-    cout << _C_char_P << endl;
-    cout << _wchar_t_P << endl;
-    cout << _C_wchar_t_P << endl;
+    cout << "void* : " << _void_P << endl;
+    cout << "short : " << _short << endl;
+    cout << "unsigned short : " << _ushort << endl;
+    cout << "int : " << _int << endl;
+    cout << "unsigned int : " << _uint << endl;
+    cout << "long : " << _long << endl;
+    cout << "unsigned long : " << _ulong << endl;
+    cout << "bool : " << _bool << endl;
+    cout << "float : " << _float << endl;
+    cout << "double : " << _double << endl;
+    cout << "char : " << _char << endl;
+    cout << "unsigned char : " << _uchar << endl;
+    cout << "wchar_t : " << _wchar_t << endl;
+    cout << "char* : " << _char_P << endl;
+    cout << "const char* : " << _C_char_P << endl;
+    cout << "wchar_t* : " << _wchar_t_P << endl;
+    cout << "const wchar_t* : " << _C_wchar_t_P << endl;
 }
