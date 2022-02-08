@@ -9,31 +9,24 @@ using System.Threading.Tasks;
 /// <summary>
 /// 文件读写
 /// </summary>
-public static class OperIO
+public class OperIO
 {
-    //    // 读取配置文件
-    //        if (File.Exists(Application.StartupPath + @"\配置文件.ini"))
-    //        {
-    //            string strFilePath = Application.StartupPath + @"\配置文件.ini";
-    //    GameWindow_ReadPlacement(strFilePath);
-    //    GameExpedition_ReadPlacement(strFilePath);
-    //    GameAttack_ReadPlacement(strFilePath);
-    //}
-    // Convert.ToInt32(OperINI.ReadIni("游戏窗口", "手动偏移X", 0.ToString(), strFilePath)),
-    //OperINI.WriteIni("游戏窗口", "手动偏移X", GlobalObject.ClickOffsetXY.X.ToString(), strFilePath);
-
-    /// <summary>
-    /// 文件根目录
-    /// </summary>
-    public static string DirectoryPath { get; private set; } = string.Empty;
     /// <summary>
     /// 配置文件路径
     /// </summary>
-    public static string IniPath { get; private set; } = string.Empty;
+    public string IniPath { get; private set; } = string.Empty;
     /// <summary>
     /// 日志文件路径
     /// </summary>
-    public static string LogPath { get; private set; } = string.Empty;
+    public string LogPath { get; private set; } = string.Empty;
+
+    public static OperIO Create(string iniPath, string logPath = "")
+    {
+        var result = new OperIO();
+        result.IniPath = iniPath;
+        result.LogPath = logPath;
+        return result;
+    }
 
 
     /// <summary>
@@ -68,7 +61,7 @@ public static class OperIO
     /// <param name="defValue">默认键值</param>
     /// <param name="filePath">文件路径</param>
     /// <returns>读取的键值</returns>
-    public static string ReadIni(string section, string key, string defValue, string filePath = null)
+    public string ReadIni(string section, string key, string defValue, string filePath = null)
     {
         try
         {
@@ -91,7 +84,7 @@ public static class OperIO
     /// <param name="value">键值</param>
     /// <param name="filePath">文件路径</param>
     /// <returns>布尔值</returns>
-    public static bool WriteIni(string section, string key, string value, string filePath = null)
+    public bool WriteIni(string section, string key, string value, string filePath = null)
     {
         if (filePath == null) filePath = IniPath;
         return WritePrivateProfileString(section, key, value, filePath);
@@ -102,7 +95,7 @@ public static class OperIO
     /// <param name="section">小节</param>
     /// <param name="filePath">文件路径</param>
     /// <returns></returns>
-    public static bool DeleteSection(string section, string filePath)
+    public bool DeleteSection(string section, string filePath)
     { return WritePrivateProfileString(section, null, null, filePath); }
     /// <summary>
     /// 删除键
@@ -111,7 +104,7 @@ public static class OperIO
     /// <param name="key">键</param>
     /// <param name="filePath">文件路径</param>
     /// <returns></returns>
-    public static bool DeleteKey(string section, string key, string filePath)
+    public bool DeleteKey(string section, string key, string filePath)
     { return WritePrivateProfileString(section, key, null, filePath); }
 
     /// <summary>
@@ -120,7 +113,7 @@ public static class OperIO
     /// <param name="text"></param>
     /// <param name="filePath"></param>
     /// <returns></returns>
-    public static bool WriteLog(string text, string filePath = null)
+    public bool WriteLog(string text, string filePath = null)
     {
         try
         {
@@ -136,15 +129,5 @@ public static class OperIO
             return false;
         }
 
-    }
-
-    static OperIO()
-    {
-        //DirectoryPath = CQApp.Instance.CQS_getAppDirectory();
-        IniPath = DirectoryPath + @"绅提无舰@群秘书舰.ini";
-        LogPath = DirectoryPath + @"Log.log";
-
-        if (!Directory.Exists(OperIO.DirectoryPath))
-            Directory.CreateDirectory(OperIO.DirectoryPath);
     }
 }
