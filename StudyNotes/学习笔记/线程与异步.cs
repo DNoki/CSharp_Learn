@@ -6,7 +6,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-internal class 线程与异步
+public class 线程与异步
 {
     /*
         如无需返回值，则使用ThreadPool
@@ -24,10 +24,13 @@ internal class 线程与异步
     public static void Main()
     {
         var watch = new Stopwatch(); // 使用 Stopwatch类 对程序部分代码进行计时
-        DelegateProcess();
+        ThreadSynchronize();
         Console.Read();
     }
 
+    /// <summary>
+    /// 一个耗时的方法
+    /// </summary>
     public static void AsynMethod()
     {
         for (var i = 0; i < AsynTime; i++)
@@ -36,6 +39,10 @@ internal class 线程与异步
             Console.WriteLine($"{GlobalVar++}.. \t\t异步线程已经过 {i + 1} 秒。");
         }
     }
+    /// <summary>
+    /// 一个耗时的带参数方法
+    /// </summary>
+    /// <param name="text"></param>
     public static void AsynMethod(string text)
     {
         for (var i = 0; i < AsynTime; i++)
@@ -44,6 +51,10 @@ internal class 线程与异步
             Console.WriteLine($"\t\t异步线程已经过 {i + 1} 秒。输入的文本：{text}");
         }
     }
+    /// <summary>
+    /// 一个耗时的带返回值的方法
+    /// </summary>
+    /// <returns></returns>
     public static string AsynMethodReturn()
     {
         for (var i = 0; i < AsynTime; i++)
@@ -53,6 +64,10 @@ internal class 线程与异步
         }
         return "返回的结果";
     }
+    /// <summary>
+    /// async/await 关键字
+    /// </summary>
+    /// <returns></returns>
     public static async Task<string> AsynTaskReturn()
     {
         Console.WriteLine($"\t\t开始执行异步任务。");
@@ -163,5 +178,52 @@ internal class 线程与异步
         //thread.Join();
     }
 
+    /// <summary>
+    /// 线程同步参考
+    /// </summary>
+    public static void ThreadSynchronize()
+    {
+        void TestFunc(int task, int id)
+        {
+            // 使用 lock 关键字同步
+            //lock (ThreadSynchronizeLocker)
+            //{
+            //    Console.WriteLine($"任务：{task}  |  编号：{id}  |  Count = {ThreadSynchronizeCount++}");
+            //}
+
+            // lock 本质上是 Monitor 的语法糖
+            //Monitor.Enter(ThreadSynchronizeLocker);
+            //{
+            //    Console.WriteLine($"任务：{task}  |  编号：{id}  |  Count = {ThreadSynchronizeCount++}");
+            //}
+            //Monitor.Exit(ThreadSynchronizeLocker);
+
+            // 使用互斥锁
+            ThreadSynchronizeMutex.WaitOne();
+            Console.WriteLine($"任务：{task}  |  编号：{id}  |  Count = {ThreadSynchronizeCount++}");
+            ThreadSynchronizeMutex.ReleaseMutex();
+        }
+
+        Task.Run(() =>
+        {
+            for (var i = 0; i < 10; i++)
+                TestFunc(1, i);
+        });
+        Task.Run(() =>
+        {
+            for (var i = 0; i < 10; i++)
+                TestFunc(2, i);
+        });
+        Task.Run(() =>
+        {
+            for (var i = 0; i < 10; i++)
+                TestFunc(3, i);
+        });
+
+        Task.WaitAll();
+    }
+    public static object ThreadSynchronizeLocker = new();
+    public static Mutex ThreadSynchronizeMutex = new();
+    public static int ThreadSynchronizeCount = 0;
 }
 
