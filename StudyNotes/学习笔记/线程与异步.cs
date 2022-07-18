@@ -6,7 +6,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-internal class 线程与异步
+public class 线程与异步
 {
     /*
         如无需返回值，则使用ThreadPool
@@ -24,7 +24,8 @@ internal class 线程与异步
     public static void Main()
     {
         var watch = new Stopwatch(); // 使用 Stopwatch类 对程序部分代码进行计时
-        DelegateProcess();
+        AsynTaskReturnVoid();
+        Console.WriteLine($"主线程继续执行。");
         Console.Read();
     }
 
@@ -35,6 +36,7 @@ internal class 线程与异步
             Thread.Sleep(1000);
             Console.WriteLine($"{GlobalVar++}.. \t\t异步线程已经过 {i + 1} 秒。");
         }
+        Console.WriteLine($"异步线程已结束。");
     }
     public static void AsynMethod(string text)
     {
@@ -53,6 +55,7 @@ internal class 线程与异步
         }
         return "返回的结果";
     }
+    public static async void AsynTaskReturnVoid() => await AsynTaskReturn();
     public static async Task<string> AsynTaskReturn()
     {
         Console.WriteLine($"\t\t开始执行异步任务。");

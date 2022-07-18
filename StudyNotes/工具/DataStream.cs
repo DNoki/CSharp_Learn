@@ -107,7 +107,7 @@ public class DataStream
         handle.Free();
         return result;
     }
-    public unsafe void WriteArray<T>(T[] array) where T : unmanaged
+    public void WriteArray<T>(T[] array) where T : unmanaged
     {
         _writer.Write(array.Length);
         if (array.Length == 0) return;
@@ -115,16 +115,30 @@ public class DataStream
         var type = typeof(T);
         var size = array.Length * Marshal.SizeOf(type.IsEnum ? type.GetEnumUnderlyingType() : type);
         var bytes = new byte[size];
+
+        var handle = GCHandle.Alloc(array, GCHandleType.Pinned);
+        Marshal.Copy(handle.AddrOfPinnedObject(), bytes, 0, size);
+        handle.Free();
+
+        _writer.Write(bytes);
+    }
+    public unsafe void WriteArrayUnsafe<T>(T[] array) where T : unmanaged
+    {
+        _writer.Write(array.Length);
+        if (array.Length == 0) return;
+
+        var type = typeof(T);
+        var size = array.Length * Marshal.SizeOf(type.IsEnum ? type.GetEnumUnderlyingType() : type);
+        var bytes = new byte[size];
+
         fixed (void* ptr = array)
         {
             Marshal.Copy((IntPtr)ptr, bytes, 0, size);
         }
-        //var handle = GCHandle.Alloc(array, GCHandleType.Pinned);
-        //Marshal.Copy(handle.AddrOfPinnedObject(), bytes, 0, size);
-        //handle.Free();
+
         _writer.Write(bytes);
     }
-    public unsafe T[] ReadArray<T>() where T : unmanaged
+    public T[] ReadArray<T>() where T : unmanaged
     {
         var array = new T[_reader.ReadInt32()];
         if (array.Length == 0) return array;
@@ -132,17 +146,31 @@ public class DataStream
         var type = typeof(T);
         var size = array.Length * Marshal.SizeOf(type.IsEnum ? type.GetEnumUnderlyingType() : type);
         var bytes = _reader.ReadBytes(size);
+
+        var handle = GCHandle.Alloc(array, GCHandleType.Pinned);
+        Marshal.Copy(bytes, 0, handle.AddrOfPinnedObject(), size);
+        handle.Free();
+
+        return array;
+    }
+    public unsafe T[] ReadArrayUnsafe<T>() where T : unmanaged
+    {
+        var array = new T[_reader.ReadInt32()];
+        if (array.Length == 0) return array;
+
+        var type = typeof(T);
+        var size = array.Length * Marshal.SizeOf(type.IsEnum ? type.GetEnumUnderlyingType() : type);
+        var bytes = _reader.ReadBytes(size);
+
         fixed (void* ptr = array)
         {
             Marshal.Copy(bytes, 0, (IntPtr)ptr, size);
         }
-        //var handle = GCHandle.Alloc(array, GCHandleType.Pinned);
-        //Marshal.Copy(bytes, 0, handle.AddrOfPinnedObject(), size);
-        //handle.Free();
+
         return array;
     }
 
-    public unsafe void WriteDictionary<TKey, TValue>(IDictionary<TKey, TValue> dic) where TKey : unmanaged where TValue : unmanaged
+    public unsafe void WriteDictionaryUnsafe<TKey, TValue>(IDictionary<TKey, TValue> dic) where TKey : unmanaged where TValue : unmanaged
     {
         _writer.Write(dic.Count);
         if (dic.Count == 0) return;
@@ -170,7 +198,7 @@ public class DataStream
             _writer.Write(bytes);
         }
     }
-    public unsafe Dictionary<TKey, TValue> ReadDictionary<TKey, TValue>() where TKey : unmanaged where TValue : unmanaged
+    public unsafe Dictionary<TKey, TValue> ReadDictionaryUnsafe<TKey, TValue>() where TKey : unmanaged where TValue : unmanaged
     {
         var dic = new Dictionary<TKey, TValue>();
         var count = _reader.ReadInt32();
@@ -196,7 +224,7 @@ public class DataStream
                 Marshal.Copy(bytes, 0, (IntPtr)ptr, size);
             }
         }
-        for (int i = 0; i < count; i++)
+        for (var i = 0; i < count; i++)
             dic.Add(keys[i], values[i]);
 
         return dic;
