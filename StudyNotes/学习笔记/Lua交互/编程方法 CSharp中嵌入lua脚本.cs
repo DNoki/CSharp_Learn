@@ -31,7 +31,7 @@ Function    LuaInterface.LuaFunction
         Console.WriteLine(GetString("String"));// 从lua中读取字符串 
 
         // 读取 lua 脚本文件到字符串，并执行
-        var luaScriptText = System.IO.File.ReadAllText("../../../学习笔记/Lua交互/Lua_Simple.lua", Encoding.UTF8);
+        var luaScriptText = System.IO.File.ReadAllText("../../../../StudyNotes/学习笔记/Lua交互/Lua_Simple.lua", Encoding.UTF8);
         var reslut = DoString(luaScriptText);// 执行并返回结果
         Console.WriteLine(reslut.First());
 
@@ -118,5 +118,10 @@ end"
         {
             Console.WriteLine("C#的静态方法，编号：" + abc.ToString());
         }
+    }
+
+    public static void TestRun()
+    {
+        new LuaProcess().LuaRun();
     }
 }

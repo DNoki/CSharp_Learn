@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 
 public static class SortAlgorithmDemo
 {
-    private static void Main(string[] args)
+    public static void Main(string[] args)
     {
         int[] aa = RandomSet(10000, 99999);
         //int[] aa = OrderedSet(5000);
@@ -605,7 +605,7 @@ public static class SortAlgorithmDemo
             methodName += " ";
         }
         Console.WriteLine(methodName +
-            "  IsAscOrdered:" + IsAscOrdered(data) + "  Time:" + stopwatch.Elapsed.TotalSeconds);
+            "  IsAscOrdered:" + IsAscOrdered(data) + "  Time:" + stopwatch.Elapsed.TotalMilliseconds);
     }
 
     public static void TestMicrosoft(IList<int> data)

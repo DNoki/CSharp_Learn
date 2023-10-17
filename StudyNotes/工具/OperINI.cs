@@ -12,18 +12,13 @@ using System.Threading.Tasks;
 public class OperIO
 {
     /// <summary>
-    /// 配置文件路径
-    /// </summary>
-    public string IniPath { get; private set; } = string.Empty;
-    /// <summary>
     /// 日志文件路径
     /// </summary>
     public string LogPath { get; private set; } = string.Empty;
 
-    public static OperIO Create(string iniPath, string logPath = "")
+    public static OperIO Create(string logPath = "")
     {
         var result = new OperIO();
-        result.IniPath = iniPath;
         result.LogPath = logPath;
         return result;
     }
@@ -61,18 +56,17 @@ public class OperIO
     /// <param name="defValue">默认键值</param>
     /// <param name="filePath">文件路径</param>
     /// <returns>读取的键值</returns>
-    public string ReadIni(string section, string key, string defValue, string filePath = null)
+    public static string ReadIni(string section, string key, string defValue, string filePath, int readSize = 512)
     {
         try
         {
-            if (filePath == null) filePath = IniPath;
-            StringBuilder retValue = new StringBuilder(500);
-            GetPrivateProfileString(section, key, defValue, retValue, 500, filePath);
+            var retValue = new StringBuilder(readSize);
+            GetPrivateProfileString(section, key, defValue, retValue, readSize, filePath);
             return retValue.ToString();
         }
         catch (Exception e)
         {
-            WriteLog("INI文件读取失败。" + e.Message);
+            //WriteLog("INI文件读取失败。" + e.Message);
             return defValue;
         }
     }
@@ -84,18 +78,15 @@ public class OperIO
     /// <param name="value">键值</param>
     /// <param name="filePath">文件路径</param>
     /// <returns>布尔值</returns>
-    public bool WriteIni(string section, string key, string value, string filePath = null)
-    {
-        if (filePath == null) filePath = IniPath;
-        return WritePrivateProfileString(section, key, value, filePath);
-    }
+    public static bool WriteIni(string section, string key, string value, string filePath)
+    { return WritePrivateProfileString(section, key, value, filePath); }
     /// <summary>
     /// 删除节
     /// </summary>
     /// <param name="section">小节</param>
     /// <param name="filePath">文件路径</param>
     /// <returns></returns>
-    public bool DeleteSection(string section, string filePath)
+    public static bool DeleteSection(string section, string filePath)
     { return WritePrivateProfileString(section, null, null, filePath); }
     /// <summary>
     /// 删除键
@@ -104,7 +95,7 @@ public class OperIO
     /// <param name="key">键</param>
     /// <param name="filePath">文件路径</param>
     /// <returns></returns>
-    public bool DeleteKey(string section, string key, string filePath)
+    public static bool DeleteKey(string section, string key, string filePath)
     { return WritePrivateProfileString(section, key, null, filePath); }
 
     /// <summary>

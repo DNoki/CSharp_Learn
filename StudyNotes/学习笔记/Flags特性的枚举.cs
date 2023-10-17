@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Collections.Specialized;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -18,6 +20,16 @@ public static class Flags特性的枚举
         Flag7 = 64,      // 1000000
         Flag8 = 128,     // 10000000
         Flag9 = 0b1_0000_0000 // 2进制数表示法
+    }
+    public enum MyFlags2
+    {
+        Flag0 = 1 << 0,
+        Flag1 = 1 << 1,
+        Flag2 = 1 << 2,
+        Flag3 = 1 << 3,
+        Flag4 = 1 << 4,
+        Flag5 = 1 << 5,
+        Flag6 = 1 << 6,
     }
 
     public static void 使用Flags特性的枚举()
@@ -40,6 +52,23 @@ public static class Flags特性的枚举
         {
             // 遍历枚举项
         }
+    }
+
+    public static void TestRun()
+    {
+        // 使用 BitVector32 结构
+        var bit32 = new BitVector32();
+        bit32[1 << 10 | 1 << 3] = true;
+        Console.WriteLine($"使用BitVector32：\t{Convert.ToString(bit32.Data, 2).PadLeft(32, '0')}");
+
+        // 使用 BitArray 类
+        var bitObj = new BitArray(20);
+        bitObj[3] = true;
+        bitObj[10] = true;
+        var bitArray = new StringBuilder();
+        for (var i = 0; i < bitObj.Length; i++)
+            bitArray.Insert(0,Convert.ToByte(bitObj[i]));
+        Console.WriteLine($"使用 BitArray：\t\t{bitArray.ToString().PadLeft(32, '0')}");
     }
 }
 
